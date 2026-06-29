@@ -1,30 +1,130 @@
+import { useEffect } from "react";
 import { StoreProvider, useStore } from "../../store/store";
 import Navbar from "./components/Navbar";
+import Footer from "./components/Footer";
+import Toast from "./components/Toast";
+import ProtectedRoute from "./components/ProtectedRoute";
+import AdminLayout from "./components/admin/AdminLayout";
+
+// Public pages
 import HomePage from "./pages/HomePage";
 import ShopPage from "./pages/ShopPage";
 import CartPage from "./pages/CartPage";
 import CategoryPage from "./pages/CategoryPage";
+import ProductDetailPage from "./pages/ProductDetailPage";
+import OrderHistoryPage from "./pages/OrderHistoryPage";
+import BlogPage from "./pages/BlogPage";
 import PaymentReturn from "./pages/PaymentReturn";
 
+// Auth pages
+import LoginPage from "./pages/LoginPage";
+import RegisterPage from "./pages/RegisterPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+
+// Admin pages
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminOrders from "./pages/admin/AdminOrders";
+import AdminProducts from "./pages/admin/AdminProducts";   // ← FR-08 MỚI
+import AdminVouchers from "./pages/admin/AdminVouchers";
+import AdminUsers from "./pages/admin/AdminUsers";
+
+import { getMe } from "./services/authService";
+
+// ─── Admin page map ───────────────────────────────────────────────────────────
+const ADMIN_PAGES = {
+  "admin-dashboard": AdminDashboard,
+  "admin-orders": AdminOrders,
+  "admin-products": AdminProducts,   // ← FR-08
+  "admin-vouchers": AdminVouchers,
+  "admin-users": AdminUsers,
+};
+
+// ─── Auth Init ────────────────────────────────────────────────────────────────
+function AuthInit() {
+  const { setCurrentUser } = useStore();
+  useEffect(() => {
+    getMe()
+      .then(data => { if (data?.user) setCurrentUser(data.user); })
+      .catch(() => setCurrentUser(null));
+  }, []);
+  return null;
+}
+
+// ─── Router ───────────────────────────────────────────────────────────────────
 function Router() {
-  const { page, selectedCategory } = useStore();
+  const { page, selectedCategory, navigate, showToast, setCurrentUser } = useStore();
 
-  // Check if payment return
+  useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [page]);
+
+  // VNPay return
   const urlParams = new URLSearchParams(window.location.search);
-  const isPaymentReturn = urlParams.has("vnp_TxnRef");
+  if (urlParams.has("vnp_TxnRef")) return <PaymentReturn />;
 
-  if (isPaymentReturn) return <PaymentReturn />;
-  if (page === "category" && selectedCategory) return <CategoryPage />;
-  if (page === "shop") return <ShopPage />;
-  if (page === "cart") return <CartPage />;
-  return <HomePage />;
+  // Google OAuth callback
+  if (urlParams.get("auth") === "success") {
+    window.history.replaceState({}, document.title, window.location.pathname);
+    getMe().then(d => {
+      if (d?.user) {
+        setCurrentUser(d.user);
+        showToast({ message: `Chào mừng, ${d.user.fullName}!`, type: "success" });
+      }
+    }).catch(() => { });
+    const intended = sessionStorage.getItem("funiro_intended");
+    sessionStorage.removeItem("funiro_intended");
+    navigate(intended && intended !== "login" ? intended : "home");
+    return null;
+  }
+
+  // Admin pages
+  if (page.startsWith("admin-")) {
+    const AdminPage = ADMIN_PAGES[page];
+    if (!AdminPage) return <div style={{ padding: 40, color: "#C47B5A" }}>Trang không tồn tại: {page}</div>;
+    return (
+      <ProtectedRoute redirectTo="login" requireRole="admin">
+        <AdminLayout activePage={page}>
+          <AdminPage />
+        </AdminLayout>
+      </ProtectedRoute>
+    );
+  }
+
+  // Regular pages
+  switch (page) {
+    case "login": return <LoginPage />;
+    case "register": return <RegisterPage />;
+    case "forgot-password": return <ForgotPasswordPage />;
+    case "shop": return <ShopPage />;
+    case "product": return <ProductDetailPage />;
+    case "blog": return <BlogPage />;
+    case "category": return selectedCategory ? <CategoryPage /> : <HomePage />;
+    case "orders": return <ProtectedRoute><OrderHistoryPage /></ProtectedRoute>;
+    case "cart": return <ProtectedRoute><CartPage /></ProtectedRoute>;
+    default: return <HomePage />;
+  }
+}
+
+// ─── App Shell ────────────────────────────────────────────────────────────────
+function AppShell() {
+  const { page } = useStore();
+  const isAdmin = page.startsWith("admin-");
+
+  return (
+    <div style={{ fontFamily: "'Poppins', sans-serif", background: "#FAF7F2", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      <AuthInit />
+      {!isAdmin && <Navbar />}
+      <main style={{ flex: 1 }}>
+        <Router />
+      </main>
+      {!isAdmin && <Footer />}
+      <Toast />
+    </div>
+  );
 }
 
 export default function App() {
   return (
     <StoreProvider>
-      <Navbar />
-      <Router />
+      <AppShell />
     </StoreProvider>
   );
 }

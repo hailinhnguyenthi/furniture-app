@@ -1,692 +1,347 @@
-import { useStore } from "../../../store/store";
 import { useState } from "react";
+import { useStore } from "../../../store/store";
+import { validateVoucher, createOrder } from "../services/orderService";
 import { createPayment, generateOrderCode } from "../services/paymentService";
-import PaymentModal from "../components/PaymentModal";
+import FadeUp from "../components/FadeUp";
 
-// ─── Inline styles using Funiro color palette ───────────────────────────────
-const colors = {
-  cream:      "#FAF7F2",
-  beige:      "#F0E8DC",
-  sand:       "#D9C9B0",
-  tan:        "#C4A882",
-  wood:       "#8B5E3C",
-  espresso:   "#4A2C1A",
-  terracotta: "#C47B5A",
-  rust:       "#9B4E2E",
-  sage:       "#8FA67A",
-};
+const C = { cream: "#FAF7F2", beige: "#F0E8DC", dark: "#4A2C1A", wood: "#8B5E3C", sand: "#D9C9B0", error: "#C47B5A", green: "#6B7C5C" };
+const FREE_SHIP_THRESHOLD = 5_000_000;
+const SHIPPING_FEE = 50_000;
+const fmt = (n) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(n);
 
-const styles = {
-  page: {
-    minHeight: "100vh",
-    backgroundColor: colors.cream,
-    fontFamily: "'Poppins', sans-serif",
-    color: colors.espresso,
-    paddingTop: 80,
-  },
-  // ── Header breadcrumb ──────────────────────────────────────────────────
-  hero: {
-    backgroundColor: colors.beige,
-    borderBottom: `1px solid ${colors.sand}`,
-    padding: "40px 0 32px",
-    textAlign: "center",
-  },
-  heroTitle: {
-    fontFamily: "'Playfair Display', serif",
-    fontSize: 40,
-    fontWeight: 600,
-    color: colors.espresso,
-    margin: 0,
-  },
-  breadcrumb: {
-    fontSize: 13,
-    color: colors.tan,
-    marginTop: 8,
-    letterSpacing: "0.04em",
-  },
-  breadcrumbActive: {
-    color: colors.wood,
-    fontWeight: 500,
-  },
-  // ── Layout ────────────────────────────────────────────────────────────
-  container: {
-    maxWidth: 1200,
-    margin: "0 auto",
-    padding: "48px 24px",
-    display: "grid",
-    gridTemplateColumns: "1fr 360px",
-    gap: 32,
-    alignItems: "start",
-  },
-  // ── Cart table ────────────────────────────────────────────────────────
-  tableWrap: {},
-  tableHeader: {
-    display: "grid",
-    gridTemplateColumns: "2fr 1fr 1fr 1fr 40px",
-    gap: 12,
-    backgroundColor: colors.beige,
-    padding: "14px 20px",
-    borderRadius: 4,
-    marginBottom: 12,
-  },
-  tableHeaderCell: {
-    fontSize: 11,
-    fontWeight: 600,
-    letterSpacing: "0.12em",
-    textTransform: "uppercase",
-    color: colors.wood,
-  },
-  cartItem: {
-    display: "grid",
-    gridTemplateColumns: "2fr 1fr 1fr 1fr 40px",
-    gap: 12,
-    alignItems: "center",
-    backgroundColor: "#fff",
-    border: `1px solid ${colors.sand}`,
-    borderRadius: 6,
-    padding: "16px 20px",
-    marginBottom: 10,
-    transition: "box-shadow 0.25s",
-  },
-  itemInfo: {
-    display: "flex",
-    alignItems: "center",
-    gap: 16,
-  },
-  itemImage: {
-    width: 72,
-    height: 72,
-    borderRadius: 4,
-    objectFit: "cover",
-    backgroundColor: colors.beige,
-    flexShrink: 0,
-  },
-  itemImagePlaceholder: {
-    width: 72,
-    height: 72,
-    borderRadius: 4,
-    backgroundColor: colors.beige,
-    flexShrink: 0,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  itemName: {
-    fontFamily: "'Playfair Display', serif",
-    fontSize: 15,
-    fontWeight: 600,
-    color: colors.espresso,
-    marginBottom: 2,
-  },
-  itemCategory: {
-    fontSize: 11,
-    letterSpacing: "0.1em",
-    textTransform: "uppercase",
-    color: colors.tan,
-  },
-  itemPrice: {
-    fontSize: 14,
-    color: colors.wood,
-    fontWeight: 500,
-  },
-  // ── Quantity control ──────────────────────────────────────────────────
-  qtyControl: {
-    display: "flex",
-    alignItems: "center",
-    border: `1px solid ${colors.sand}`,
-    borderRadius: 4,
-    overflow: "hidden",
-    width: "fit-content",
-  },
-  qtyBtn: {
-    width: 32,
-    height: 32,
-    border: "none",
-    backgroundColor: colors.beige,
-    color: colors.wood,
-    fontSize: 16,
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "background 0.2s",
-  },
-  qtyValue: {
-    width: 36,
-    textAlign: "center",
-    fontSize: 13,
-    fontWeight: 500,
-    color: colors.espresso,
-    backgroundColor: "#fff",
-    border: "none",
-    outline: "none",
-    padding: "0 4px",
-  },
-  itemSubtotal: {
-    fontSize: 14,
-    fontWeight: 600,
-    color: colors.wood,
-  },
-  removeBtn: {
-    width: 32,
-    height: 32,
-    border: "none",
-    backgroundColor: "transparent",
-    color: colors.tan,
-    cursor: "pointer",
-    borderRadius: "50%",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "all 0.2s",
-    fontSize: 18,
-  },
-  // ── Summary panel ─────────────────────────────────────────────────────
-  summary: {
-    backgroundColor: colors.beige,
-    borderRadius: 6,
-    padding: "28px 24px",
-    border: `1px solid ${colors.sand}`,
-    position: "sticky",
-    top: 100,
-  },
-  summaryTitle: {
-    fontFamily: "'Playfair Display', serif",
-    fontSize: 24,
-    fontWeight: 600,
-    color: colors.espresso,
-    marginBottom: 24,
-  },
-  summaryRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingBottom: 14,
-    marginBottom: 14,
-    borderBottom: `1px solid ${colors.sand}`,
-    fontSize: 14,
-    color: colors.wood,
-  },
-  summaryTotal: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingBottom: 24,
-    marginBottom: 24,
-    fontSize: 16,
-    fontWeight: 600,
-    color: colors.espresso,
-    borderBottom: `2px solid ${colors.wood}`,
-  },
-  totalAmount: {
-    fontFamily: "'Playfair Display', serif",
-    fontSize: 22,
-    color: colors.wood,
-  },
-  // ── Promo ─────────────────────────────────────────────────────────────
-  promoWrap: {
-    display: "flex",
-    gap: 8,
-    marginBottom: 20,
-  },
-  promoInput: {
-    flex: 1,
-    padding: "10px 14px",
-    border: `1px solid ${colors.sand}`,
-    borderRadius: 4,
-    fontSize: 13,
-    color: colors.espresso,
-    backgroundColor: "#fff",
-    outline: "none",
-    fontFamily: "'Poppins', sans-serif",
-  },
-  promoBtn: {
-    padding: "10px 16px",
-    backgroundColor: "transparent",
-    border: `1px solid ${colors.wood}`,
-    borderRadius: 4,
-    color: colors.wood,
-    fontSize: 12,
-    fontWeight: 600,
-    letterSpacing: "0.08em",
-    cursor: "pointer",
-    transition: "all 0.25s",
-    fontFamily: "'Poppins', sans-serif",
-  },
-  checkoutBtn: {
-    display: "block",
-    width: "100%",
-    padding: "15px 32px",
-    backgroundColor: colors.wood,
-    color: colors.cream,
-    border: "none",
-    borderRadius: 4,
-    fontSize: 13,
-    fontWeight: 500,
-    letterSpacing: "0.1em",
-    textTransform: "uppercase",
-    cursor: "pointer",
-    transition: "background 0.3s, transform 0.15s",
-    fontFamily: "'Poppins', sans-serif",
-  },
-  shopLink: {
-    display: "block",
-    textAlign: "center",
-    marginTop: 14,
-    fontSize: 12,
-    color: colors.wood,
-    textDecoration: "underline",
-    letterSpacing: "0.05em",
-    cursor: "pointer",
-  },
-  // ── Trust badges ──────────────────────────────────────────────────────
-  trustRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    marginTop: 20,
-    paddingTop: 16,
-    borderTop: `1px solid ${colors.sand}`,
-  },
-  trustItem: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: 4,
-    fontSize: 10,
-    letterSpacing: "0.08em",
-    color: colors.tan,
-    textTransform: "uppercase",
-    textAlign: "center",
-  },
-  // ── Empty state ───────────────────────────────────────────────────────
-  empty: {
-    gridColumn: "1 / -1",
-    textAlign: "center",
-    padding: "80px 40px",
-    backgroundColor: "#fff",
-    borderRadius: 6,
-    border: `1px solid ${colors.sand}`,
-  },
-  emptyTitle: {
-    fontFamily: "'Playfair Display', serif",
-    fontSize: 28,
-    color: colors.espresso,
-    marginBottom: 12,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: colors.tan,
-    marginBottom: 28,
-  },
-  emptyBtn: {
-    display: "inline-block",
-    padding: "13px 36px",
-    backgroundColor: colors.wood,
-    color: colors.cream,
-    borderRadius: 4,
-    fontSize: 12,
-    fontWeight: 500,
-    letterSpacing: "0.1em",
-    textTransform: "uppercase",
-    cursor: "pointer",
-    border: "none",
-    fontFamily: "'Poppins', sans-serif",
-  },
-};
-
-// ─── Icons ────────────────────────────────────────────────────────────────────
-const IconX = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <path d="M18 6L6 18M6 6l12 12" />
-  </svg>
-);
-const IconShield = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-    stroke={colors.tan} strokeWidth="1.5" strokeLinecap="round">
-    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-  </svg>
-);
-const IconTruck = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-    stroke={colors.tan} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="1" y="3" width="15" height="13" rx="1" />
-    <path d="M16 8h4l3 5v5h-7V8z" />
-    <circle cx="5.5" cy="18.5" r="2.5" />
-    <circle cx="18.5" cy="18.5" r="2.5" />
-  </svg>
-);
-const IconReturn = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-    stroke={colors.tan} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8" />
-    <path d="M3 3v5h5" />
-  </svg>
-);
-const IconChair = () => (
-  <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
-    stroke={colors.tan} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 7h18M5 7V4a1 1 0 011-1h12a1 1 0 011 1v3M4 7v10M20 7v10M7 17h10M7 17v3M17 17v3" />
-  </svg>
-);
-
-// ─── Format currency ──────────────────────────────────────────────────────────
-const fmt = (n) =>
-  new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n);
-
-// ─── CartPage ──────────────────────────────────────────────────────────────────
 export default function CartPage() {
-  const { cart, removeFromCart, updateQuantity, setPage } = useStore();
+  const { cart, removeFromCart, updateQuantity, clearCart, navigate, showToast, isLoggedIn } = useStore();
 
-  const [promo, setPromo]           = useState("");
-  const [promoApplied, setPromoApplied] = useState(false);
-  const [checkoutDone, setCheckoutDone] = useState(false);
-  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [hoveredItem, setHoveredItem] = useState(null);
+  // Voucher
+  const [voucherInput, setVoucherInput] = useState("");
+  const [voucherData, setVoucherData] = useState(null);
+  const [voucherLoading, setVoucherLoading] = useState(false);
+  const [voucherError, setVoucherError] = useState("");
 
-  const subtotal  = cart.reduce((s, i) => s + (i.price ?? 0) * (i.quantity ?? 1), 0);
-  const shipping  = subtotal > 1500000 ? 0 : 150000;
-  const discount  = promoApplied ? Math.round(subtotal * 0.1) : 0;
-  const total     = subtotal + shipping - discount;
+  // Checkout modal
+  const [showModal, setShowModal] = useState(false);
+  const [orderLoading, setOrderLoading] = useState(false);
+  const [formData, setFormData] = useState({ fullName: "", email: "", phone: "", address: "", city: "", district: "", ward: "", notes: "" });
+  const [formErrors, setFormErrors] = useState({});
 
-  const handleQty = (id, delta) => {
-    const item = cart.find((i) => i.id === id);
-    if (!item) return;
-    const next = (item.quantity ?? 1) + delta;
-    if (next < 1) return;
-    updateQuantity?.(id, next);
-  };
+  // ── Derived values ────────────────────────────────────────────────────
+  const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+  const discount = voucherData?.discount || 0;
+  const shippingFee = subtotal >= FREE_SHIP_THRESHOLD ? 0 : SHIPPING_FEE;
+  const total = Math.max(0, subtotal - discount + shippingFee);
+  const progress = Math.min(100, (subtotal / FREE_SHIP_THRESHOLD) * 100);
+  const remaining = FREE_SHIP_THRESHOLD - subtotal;
 
-  const handlePromo = () => {
-    if (promo.trim().toUpperCase() === "FUNIRO10") setPromoApplied(true);
-    else alert("Mã giảm giá không hợp lệ. Thử FUNIRO10 nhé!");
-  };
-
-  const handleCheckout = () => {
-    if (cart.length === 0) {
-      alert("Giỏ hàng trống. Vui lòng thêm sản phẩm.");
-      return;
+  // ── Voucher ───────────────────────────────────────────────────────────
+  const handleApplyVoucher = async () => {
+    if (!voucherInput.trim()) return;
+    setVoucherLoading(true);
+    setVoucherError("");
+    try {
+      const data = await validateVoucher(voucherInput.trim(), subtotal);
+      setVoucherData(data);
+      showToast({ message: `Áp dụng voucher thành công! Giảm ${fmt(data.discount)}`, type: "success" });
+    } catch (err) {
+      setVoucherError(err.message);
+      setVoucherData(null);
+    } finally {
+      setVoucherLoading(false);
     }
-    setIsPaymentModalOpen(true);
   };
 
-  // ── Checkout success screen ──────────────────────────────────────────────
-  if (checkoutDone) {
+  const removeVoucher = () => { setVoucherData(null); setVoucherInput(""); setVoucherError(""); };
+
+  // ── Form validation ───────────────────────────────────────────────────
+  const validate = () => {
+    const e = {};
+    if (!formData.fullName.trim()) e.fullName = "Vui lòng nhập họ tên";
+    if (!formData.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) e.email = "Email không hợp lệ";
+    if (!/^(0|\+84)[0-9]{9,10}$/.test(formData.phone.replace(/\s/g, ""))) e.phone = "Số điện thoại không hợp lệ";
+    if (!formData.address.trim()) e.address = "Vui lòng nhập địa chỉ";
+    if (!formData.city.trim()) e.city = "Vui lòng nhập tỉnh/thành phố";
+    if (!formData.district.trim()) e.district = "Vui lòng nhập quận/huyện";
+    setFormErrors(e);
+    return !Object.keys(e).length;
+  };
+
+  // ── Submit checkout ───────────────────────────────────────────────────
+  const handleCheckout = async (e) => {
+    e.preventDefault();
+    if (!validate()) return;
+    setOrderLoading(true);
+
+    try {
+      const orderCode = generateOrderCode();
+
+      // 1. Tạo đơn hàng trong DB
+      if (isLoggedIn) {
+        await createOrder({
+          orderCode,
+          items: cart.map(i => ({ productId: i._id || i.id, name: i.name, img: i.img, price: i.price, quantity: i.quantity })),
+          shippingAddress: formData,
+          voucherCode: voucherData?.voucherCode || "",
+          paymentMethod: "vnpay",
+        });
+      }
+
+      // 2. Tạo VNPay URL
+      const payment = await createPayment({
+        amount: total,
+        orderCode,
+        orderDescription: `Đơn hàng Funiro - ${cart.length} sản phẩm`,
+        customerInfo: { ...formData, items: cart, total, discount, shipping: shippingFee },
+      });
+
+      if (payment.success && payment.paymentUrl) {
+        window.location.href = payment.paymentUrl;
+      } else {
+        throw new Error("Không thể tạo URL thanh toán");
+      }
+    } catch (err) {
+      showToast({ message: err.message || "Lỗi thanh toán. Vui lòng thử lại.", type: "error" });
+      setOrderLoading(false);
+    }
+  };
+
+  // ── Empty cart ────────────────────────────────────────────────────────
+  if (cart.length === 0) {
     return (
-      <div style={styles.page}>
-        <div style={{ ...styles.hero }}>
-          <h1 style={styles.heroTitle}>Đặt hàng thành công!</h1>
-        </div>
-        <div style={{ maxWidth: 560, margin: "60px auto", textAlign: "center", padding: "0 24px" }}>
-          <div style={{ fontSize: 64, marginBottom: 24 }}>🎉</div>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, color: colors.espresso, marginBottom: 12 }}>
-            Cảm ơn bạn đã tin tưởng Funiro
-          </h2>
-          <p style={{ fontSize: 14, color: colors.tan, lineHeight: 1.8, marginBottom: 32 }}>
-            Đơn hàng của bạn đang được xử lý. Chúng tôi sẽ liên hệ xác nhận trong vòng 24 giờ.
-          </p>
-          <button style={styles.emptyBtn} onClick={() => setCheckoutDone(false)}>
-            Tiếp tục mua sắm
-          </button>
-        </div>
+      <div style={{ background: C.cream, minHeight: "80vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <FadeUp>
+          <div style={{ textAlign: "center", padding: 40 }}>
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke={C.sand} strokeWidth="1" style={{ marginBottom: 24 }}>
+              <circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" />
+              <path d="M1 1h4l2.68 13.39a2 2 0 001.99 1.61H19.4a2 2 0 001.99-1.61L23 6H6" />
+            </svg>
+            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.6rem", color: C.dark, margin: "0 0 12px" }}>Giỏ hàng trống</h2>
+            <p style={{ fontSize: 14, color: "#999", marginBottom: 28 }}>Khám phá bộ sưu tập nội thất của chúng tôi</p>
+            <button onClick={() => navigate("shop")} style={{ background: C.dark, color: "#fff", border: "none", borderRadius: 6, padding: "13px 32px", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "'Poppins', sans-serif" }}>
+              Mua sắm ngay
+            </button>
+          </div>
+        </FadeUp>
       </div>
     );
   }
 
   return (
-    <div style={styles.page}>
-      {/* ── Hero breadcrumb ─────────────────────────────────────────────── */}
-      <div style={styles.hero}>
-        <h1 style={styles.heroTitle}>Giỏ hàng</h1>
-        <p style={styles.breadcrumb}>
-          Home <span style={{ margin: "0 8px", color: colors.sand }}>/</span>
-          <span style={styles.breadcrumbActive}>Cart</span>
-        </p>
+    <div style={{ background: C.cream, minHeight: "100vh" }}>
+      {/* Hero */}
+      <div style={{ background: C.beige, borderBottom: `1px solid ${C.sand}`, padding: "32px 40px", textAlign: "center" }}>
+        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: "2rem", fontWeight: 700, color: C.dark, margin: 0 }}>Giỏ hàng</h1>
+        <p style={{ fontSize: 13, color: C.sand, marginTop: 8 }}>Trang chủ <span style={{ margin: "0 6px" }}>/</span> <span style={{ color: C.wood }}>Cart</span></p>
       </div>
 
-      {/* ── Main layout ─────────────────────────────────────────────────── */}
-      <div style={styles.container}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "40px 40px", display: "grid", gridTemplateColumns: "1fr 380px", gap: 40, alignItems: "start" }}>
 
-        {cart.length === 0 ? (
-          /* ── Empty state ──────────────────────────────────────────────── */
-          <div style={styles.empty}>
-            <div style={{ marginBottom: 20 }}>
-              <IconChair />
-            </div>
-            <h2 style={styles.emptyTitle}>Giỏ hàng của bạn đang trống</h2>
-            <p style={styles.emptyText}>
-              Khám phá bộ sưu tập nội thất cao cấp của chúng tôi
-            </p>
-            <button style={styles.emptyBtn} onClick={() => setPage("shop")}>
-              Khám phá sản phẩm
-            </button>
+        {/* ── Cart Items ─────────────────────────────────────────────── */}
+        <div>
+          {/* Table header */}
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 40px", gap: 16, padding: "12px 20px", background: C.beige, borderRadius: 8, marginBottom: 16, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.dark }}>
+            <span>Sản phẩm</span><span style={{ textAlign: "center" }}>Đơn giá</span>
+            <span style={{ textAlign: "center" }}>Số lượng</span><span style={{ textAlign: "right" }}>Thành tiền</span><span />
           </div>
-        ) : (
-          <>
-            {/* ── Cart table ──────────────────────────────────────────────── */}
-            <div style={styles.tableWrap}>
-              {/* Table header */}
-              <div style={styles.tableHeader}>
-                <span style={styles.tableHeaderCell}>Sản phẩm</span>
-                <span style={{ ...styles.tableHeaderCell, textAlign: "center" }}>Đơn giá</span>
-                <span style={{ ...styles.tableHeaderCell, textAlign: "center" }}>Số lượng</span>
-                <span style={{ ...styles.tableHeaderCell, textAlign: "center" }}>Thành tiền</span>
-                <span />
-              </div>
 
-              {/* Items */}
-              {cart.map((item) => {
-                const qty      = item.quantity ?? 1;
-                const price    = item.price ?? 0;
-                const imgSrc   = item.img ?? item.image;
-                const subtotalItem = price * qty;
-
-                return (
-                  <div
-                    key={item.id}
-                    style={{
-                      ...styles.cartItem,
-                      boxShadow: hoveredItem === item.id
-                        ? "0 6px 24px rgba(74,44,26,0.10)"
-                        : "none",
-                    }}
-                    onMouseEnter={() => setHoveredItem(item.id)}
-                    onMouseLeave={() => setHoveredItem(null)}
-                  >
-                    {/* Product info */}
-                    <div style={styles.itemInfo}>
-                      {imgSrc ? (
-                        <img
-                          src={imgSrc}
-                          alt={item.name}
-                          style={styles.itemImage}
-                        />
-                      ) : (
-                        <div style={styles.itemImagePlaceholder}>
-                          <IconChair />
-                        </div>
-                      )}
-                      <div>
-                        <div style={styles.itemName}>{item.name}</div>
-                        {item.category && (
-                          <div style={styles.itemCategory}>{item.category}</div>
-                        )}
-                        {item.variant && (
-                          <div style={{ fontSize: 11, color: colors.tan, marginTop: 4 }}>
-                            {item.variant}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Unit price */}
-                    <div style={{ ...styles.itemPrice, textAlign: "center" }}>
-                      {fmt(price)}
-                    </div>
-
-                    {/* Quantity */}
-                    <div style={{ display: "flex", justifyContent: "center" }}>
-                      <div style={styles.qtyControl}>
-                        <button
-                          style={styles.qtyBtn}
-                          onClick={() => handleQty(item.id, -1)}
-                          aria-label="Giảm"
-                        >
-                          −
-                        </button>
-                        <span style={styles.qtyValue}>{qty}</span>
-                        <button
-                          style={styles.qtyBtn}
-                          onClick={() => handleQty(item.id, 1)}
-                          aria-label="Tăng"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Subtotal */}
-                    <div style={{ ...styles.itemSubtotal, textAlign: "center" }}>
-                      {fmt(subtotalItem)}
-                    </div>
-
-                    {/* Remove */}
-                    <button
-                      style={styles.removeBtn}
-                      onClick={() => removeFromCart?.(item.id)}
-                      title="Xóa"
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = "#fee";
-                        e.currentTarget.style.color = colors.rust;
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = "transparent";
-                        e.currentTarget.style.color = colors.tan;
-                      }}
-                    >
-                      <IconX />
-                    </button>
+          {cart.map(item => (
+            <FadeUp key={item.id}>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 40px", gap: 16, padding: "16px 20px", background: "#fff", borderRadius: 8, marginBottom: 12, alignItems: "center", border: `1px solid ${C.sand}` }}>
+                {/* Product */}
+                <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                  <img src={item.img} alt={item.name} style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 6, background: C.beige, flexShrink: 0 }} />
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: C.dark, margin: 0 }}>{item.name}</p>
+                    <p style={{ fontSize: 11, color: "#bbb", margin: "4px 0 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>{item.category}</p>
                   </div>
-                );
-              })}
-
-              {/* Continue shopping hint */}
-              <p style={{ fontSize: 12, color: colors.tan, marginTop: 16, letterSpacing: "0.04em" }}>
-                💡 Miễn phí vận chuyển cho đơn hàng trên{" "}
-                <strong style={{ color: colors.wood }}>1.500.000đ</strong>
-              </p>
-            </div>
-
-            {/* ── Order summary ──────────────────────────────────────────── */}
-            <div style={styles.summary}>
-              <h2 style={styles.summaryTitle}>Tóm tắt đơn hàng</h2>
-
-              <div style={styles.summaryRow}>
-                <span>Tạm tính ({cart.length} sản phẩm)</span>
-                <span>{fmt(subtotal)}</span>
-              </div>
-
-              <div style={styles.summaryRow}>
-                <span>Phí vận chuyển</span>
-                <span style={{ color: shipping === 0 ? colors.sage : colors.espresso }}>
-                  {shipping === 0 ? "Miễn phí" : fmt(shipping)}
-                </span>
-              </div>
-
-              {promoApplied && (
-                <div style={{ ...styles.summaryRow, color: colors.sage }}>
-                  <span>Giảm giá (FUNIRO10)</span>
-                  <span>− {fmt(discount)}</span>
                 </div>
-              )}
-
-              <div style={styles.summaryTotal}>
-                <span>Tổng cộng</span>
-                <span style={styles.totalAmount}>{fmt(total)}</span>
+                {/* Price */}
+                <p style={{ textAlign: "center", fontSize: 14, color: "#666", margin: 0 }}>{fmt(item.price)}</p>
+                {/* Qty */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${C.sand}`, borderRadius: 6, overflow: "hidden", width: 100, margin: "0 auto" }}>
+                  <button onClick={() => updateQuantity(item.id, item.quantity - 1)} style={{ background: "none", border: "none", width: 32, height: 36, cursor: "pointer", fontSize: 16, color: C.wood }}>−</button>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.dark, width: 36, textAlign: "center" }}>{item.quantity}</span>
+                  <button onClick={() => updateQuantity(item.id, item.quantity + 1)} style={{ background: "none", border: "none", width: 32, height: 36, cursor: "pointer", fontSize: 16, color: C.wood }}>+</button>
+                </div>
+                {/* Subtotal */}
+                <p style={{ textAlign: "right", fontSize: 14, fontWeight: 700, color: C.dark, margin: 0 }}>{fmt(item.price * item.quantity)}</p>
+                {/* Remove */}
+                <button onClick={() => removeFromCart(item.id)} style={{ background: "none", border: "none", cursor: "pointer", color: C.sand, fontSize: 18, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", transition: "color 0.2s" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = C.error)}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = C.sand)}>
+                  ✕
+                </button>
               </div>
+            </FadeUp>
+          ))}
 
-              {/* Promo code */}
-              {!promoApplied && (
-                <div style={styles.promoWrap}>
+          {/* Free shipping progress */}
+          {remaining > 0 && (
+            <div style={{ background: "#fff", borderRadius: 8, padding: "16px 20px", border: `1px solid ${C.sand}`, marginTop: 8 }}>
+              <p style={{ fontSize: 13, color: C.dark, margin: "0 0 10px" }}>
+                Mua thêm <strong style={{ color: C.wood }}>{fmt(remaining)}</strong> để được miễn phí vận chuyển 🚚
+              </p>
+              <div style={{ height: 6, background: C.beige, borderRadius: 3 }}>
+                <div style={{ height: "100%", width: `${progress}%`, background: C.wood, borderRadius: 3, transition: "width 0.4s" }} />
+              </div>
+            </div>
+          )}
+          {remaining <= 0 && (
+            <div style={{ background: "#EEF4EA", borderRadius: 8, padding: "12px 20px", border: `1px solid #8FA67A`, marginTop: 8 }}>
+              <p style={{ fontSize: 13, color: C.green, margin: 0, fontWeight: 600 }}>✓ Bạn được miễn phí vận chuyển!</p>
+            </div>
+          )}
+        </div>
+
+        {/* ── Order Summary ──────────────────────────────────────────── */}
+        <div style={{ background: "#fff", borderRadius: 10, border: `1px solid ${C.sand}`, padding: 28, position: "sticky", top: 84 }}>
+          <h3 style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.2rem", color: C.dark, margin: "0 0 24px", paddingBottom: 16, borderBottom: `1px solid ${C.beige}` }}>
+            Tóm tắt đơn hàng
+          </h3>
+
+          {/* Voucher */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ fontSize: 12, fontWeight: 700, color: C.dark, letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: 8 }}>Mã giảm giá</label>
+            {voucherData ? (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#EEF4EA", borderRadius: 6, padding: "10px 14px", border: `1px solid #8FA67A` }}>
+                <span style={{ fontSize: 13, color: C.green, fontWeight: 600 }}>✓ {voucherData.voucherCode}</span>
+                <button onClick={removeVoucher} style={{ background: "none", border: "none", cursor: "pointer", color: "#999", fontSize: 16 }}>✕</button>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: "flex", gap: 8 }}>
                   <input
-                    style={styles.promoInput}
-                    placeholder="Mã giảm giá"
-                    value={promo}
-                    onChange={(e) => setPromo(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handlePromo()}
+                    type="text" placeholder="Nhập mã voucher"
+                    value={voucherInput}
+                    onChange={(e) => { setVoucherInput(e.target.value.toUpperCase()); setVoucherError(""); }}
+                    onKeyDown={(e) => e.key === "Enter" && handleApplyVoucher()}
+                    style={{ flex: 1, padding: "10px 12px", border: `1px solid ${voucherError ? C.error : C.sand}`, borderRadius: 6, fontSize: 13, fontFamily: "'Poppins', sans-serif", outline: "none" }}
                   />
-                  <button
-                    style={styles.promoBtn}
-                    onClick={handlePromo}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = colors.wood;
-                      e.currentTarget.style.color = colors.cream;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "transparent";
-                      e.currentTarget.style.color = colors.wood;
-                    }}
-                  >
-                    ÁP DỤNG
+                  <button onClick={handleApplyVoucher} disabled={voucherLoading}
+                    style={{ background: C.dark, color: "#fff", border: "none", borderRadius: 6, padding: "10px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Poppins', sans-serif", whiteSpace: "nowrap" }}>
+                    {voucherLoading ? "..." : "Áp dụng"}
                   </button>
                 </div>
-              )}
+                {voucherError && <p style={{ fontSize: 11, color: C.error, margin: "6px 0 0" }}>{voucherError}</p>}
+              </>
+            )}
+          </div>
 
-              {promoApplied && (
-                <p style={{ fontSize: 12, color: colors.sage, marginBottom: 16, letterSpacing: "0.04em" }}>
-                  ✓ Mã FUNIRO10 đã được áp dụng
-                </p>
-              )}
-
-              {/* Checkout button */}
-              <button
-                style={styles.checkoutBtn}
-                onClick={handleCheckout}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = colors.espresso;
-                  e.currentTarget.style.transform = "translateY(-2px)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = colors.wood;
-                  e.currentTarget.style.transform = "translateY(0)";
-                }}
-              >
-                Tiến hành thanh toán
-              </button>
-
-              <span style={styles.shopLink} onClick={() => setPage("shop")}>
-                ← Tiếp tục mua sắm
-              </span>
-
-              {/* Trust badges */}
-              <div style={styles.trustRow}>
-                <div style={styles.trustItem}>
-                  <IconShield />
-                  <span>Bảo mật</span>
-                </div>
-                <div style={styles.trustItem}>
-                  <IconTruck />
-                  <span>Giao nhanh</span>
-                </div>
-                <div style={styles.trustItem}>
-                  <IconReturn />
-                  <span>Đổi 30 ngày</span>
-                </div>
+          {/* Price breakdown */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
+            {[
+              ["Tạm tính", fmt(subtotal)],
+              ...(discount > 0 ? [["Giảm giá", `-${fmt(discount)}`]] : []),
+              ["Vận chuyển", shippingFee === 0 ? "Miễn phí" : fmt(shippingFee)],
+            ].map(([k, v]) => (
+              <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#666" }}>
+                <span>{k}</span>
+                <span style={{ color: k === "Giảm giá" ? C.green : "inherit", fontWeight: k === "Giảm giá" ? 600 : 400 }}>{v}</span>
               </div>
-            </div>
-          </>
-        )}
+            ))}
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 700, color: C.dark, borderTop: `1px solid ${C.sand}`, paddingTop: 16, marginBottom: 24 }}>
+            <span>Tổng cộng</span>
+            <span style={{ color: C.wood }}>{fmt(total)}</span>
+          </div>
+
+          <button onClick={() => setShowModal(true)}
+            style={{ width: "100%", padding: "14px 0", background: C.dark, color: "#fff", border: "none", borderRadius: 6, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "'Playfair Display', serif", transition: "background 0.2s" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = C.wood)}
+            onMouseLeave={(e) => (e.currentTarget.style.background = C.dark)}>
+            Tiến hành thanh toán
+          </button>
+
+          <button onClick={() => navigate("shop")}
+            style={{ width: "100%", padding: "12px 0", background: "none", border: `1px solid ${C.sand}`, borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: "pointer", color: C.dark, fontFamily: "'Poppins', sans-serif", marginTop: 10 }}>
+            ← Tiếp tục mua sắm
+          </button>
+        </div>
       </div>
 
-      {/* Payment Modal */}
-      <PaymentModal
-        isOpen={isPaymentModalOpen}
-        onClose={() => setIsPaymentModalOpen(false)}
-        cartItems={cart}
-        total={total}
-        discount={discount}
-        shipping={shipping}
-      />
+      {/* ── Checkout Modal ─────────────────────────────────────────────── */}
+      {showModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 12, maxWidth: 600, width: "100%", maxHeight: "90vh", overflow: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "24px 28px", borderBottom: `1px solid ${C.beige}`, background: C.cream }}>
+              <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.3rem", color: C.dark, margin: 0 }}>Thông tin giao hàng</h2>
+              <button onClick={() => setShowModal(false)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#bbb" }}>✕</button>
+            </div>
+
+            <div style={{ padding: "24px 28px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                <ModalField label="Họ và tên *" error={formErrors.fullName}>
+                  <ModalInput name="fullName" placeholder="Nguyễn Văn A" value={formData.fullName} onChange={(e) => setFormData(p => ({ ...p, fullName: e.target.value }))} hasError={!!formErrors.fullName} disabled={orderLoading} />
+                </ModalField>
+                <ModalField label="Email *" error={formErrors.email}>
+                  <ModalInput name="email" type="email" placeholder="email@example.com" value={formData.email} onChange={(e) => setFormData(p => ({ ...p, email: e.target.value }))} hasError={!!formErrors.email} disabled={orderLoading} />
+                </ModalField>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                <ModalField label="Số điện thoại *" error={formErrors.phone}>
+                  <ModalInput name="phone" type="tel" placeholder="0912345678" value={formData.phone} onChange={(e) => setFormData(p => ({ ...p, phone: e.target.value }))} hasError={!!formErrors.phone} disabled={orderLoading} />
+                </ModalField>
+                <ModalField label="Tỉnh/Thành phố *" error={formErrors.city}>
+                  <ModalInput name="city" placeholder="TP. Hồ Chí Minh" value={formData.city} onChange={(e) => setFormData(p => ({ ...p, city: e.target.value }))} hasError={!!formErrors.city} disabled={orderLoading} />
+                </ModalField>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                <ModalField label="Quận/Huyện *" error={formErrors.district}>
+                  <ModalInput name="district" placeholder="Quận 1" value={formData.district} onChange={(e) => setFormData(p => ({ ...p, district: e.target.value }))} hasError={!!formErrors.district} disabled={orderLoading} />
+                </ModalField>
+                <ModalField label="Phường/Xã">
+                  <ModalInput name="ward" placeholder="Phường Bến Nghé" value={formData.ward} onChange={(e) => setFormData(p => ({ ...p, ward: e.target.value }))} disabled={orderLoading} />
+                </ModalField>
+              </div>
+              <ModalField label="Địa chỉ chi tiết *" error={formErrors.address} style={{ marginBottom: 16 }}>
+                <ModalInput name="address" placeholder="123 Đường Nguyễn Huệ" value={formData.address} onChange={(e) => setFormData(p => ({ ...p, address: e.target.value }))} hasError={!!formErrors.address} disabled={orderLoading} />
+              </ModalField>
+              <ModalField label="Ghi chú" style={{ marginBottom: 24 }}>
+                <textarea name="notes" placeholder="Ghi chú thêm..." value={formData.notes} onChange={(e) => setFormData(p => ({ ...p, notes: e.target.value }))} disabled={orderLoading} rows={2}
+                  style={{ width: "100%", padding: "10px 12px", border: `1px solid ${C.sand}`, borderRadius: 6, fontSize: 13, fontFamily: "'Poppins', sans-serif", resize: "none", outline: "none", boxSizing: "border-box" }} />
+              </ModalField>
+
+              {/* Order total summary */}
+              <div style={{ background: C.beige, borderRadius: 8, padding: 16, marginBottom: 20 }}>
+                {[["Tạm tính", fmt(subtotal)], ...(discount > 0 ? [["Giảm giá", `-${fmt(discount)}`]] : []), ["Vận chuyển", shippingFee === 0 ? "Miễn phí" : fmt(shippingFee)]].map(([k, v]) => (
+                  <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 8, color: "#666" }}><span>{k}</span><span>{v}</span></div>
+                ))}
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, fontWeight: 700, color: C.dark, borderTop: `1px solid ${C.sand}`, paddingTop: 10, marginTop: 4 }}>
+                  <span>Tổng cộng</span><span>{fmt(total)}</span>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <button onClick={() => setShowModal(false)} disabled={orderLoading}
+                  style={{ padding: "13px 0", background: C.beige, border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", color: C.dark }}>
+                  Hủy
+                </button>
+                <button onClick={handleCheckout} disabled={orderLoading}
+                  style={{ padding: "13px 0", background: orderLoading ? C.sand : C.wood, border: "none", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: orderLoading ? "not-allowed" : "pointer", color: "#fff", fontFamily: "'Poppins', sans-serif", transition: "background 0.2s" }}>
+                  {orderLoading ? "Đang xử lý..." : "Thanh toán VNPay →"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function ModalField({ label, error, children, style: s }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, ...s }}>
+      <label style={{ fontSize: 12, fontWeight: 700, color: C.dark, letterSpacing: "0.05em", textTransform: "uppercase" }}>{label}</label>
+      {children}
+      {error && <p style={{ margin: 0, fontSize: 11, color: C.error }}>{error}</p>}
+    </div>
+  );
+}
+
+function ModalInput({ hasError, ...props }) {
+  return (
+    <input {...props} style={{ padding: "10px 12px", border: `1px solid ${hasError ? C.error : C.sand}`, borderRadius: 6, fontSize: 13, fontFamily: "'Poppins', sans-serif", outline: "none", transition: "border-color 0.2s", width: "100%", boxSizing: "border-box" }}
+      onFocus={(e) => { if (!hasError) e.target.style.borderColor = C.wood; }}
+      onBlur={(e) => { if (!hasError) e.target.style.borderColor = C.sand; }} />
   );
 }
